@@ -1,4 +1,3 @@
-```markdown
 # API Sentinel
 
 AI-generated edge-case API tests + automated performance regression detection, built on FastAPI, Locust, and LLaMA-3.
@@ -137,4 +136,3 @@ Open the Streamlit dashboard to view results, latency trends, and flagged regres
 ## License
 
 MIT
-```
