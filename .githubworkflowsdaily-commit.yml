@@ -1,0 +1,34 @@
+name: Random Daily Commits
+
+on:
+  schedule:
+    - cron: '0 18 * * *'   # runs once daily (adjust time/timezone as needed)
+  workflow_dispatch:
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Make random number of commits
+        run: |
+          COUNT=$((RANDOM % 21))   # random number 0–20
+          echo "Making $COUNT commits today"
+
+          for i in $(seq 1 $COUNT); do
+            echo "$(date +%s) - update $i" >> activity.log
+            git add activity.log
+            git commit -m "Update log ($i/$COUNT)"
+          done
+
+          if [ "$COUNT" -gt 0 ]; then
+            git push
+          else
+            echo "No commits today"
+          fi
