@@ -13,8 +13,8 @@ jobs:
 
       - name: Configure git
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "Mona-Agrawall"
+          git config --global user.email "141909172+Mona-Agrawall@users.noreply.github.com"
 
       - name: Make random number of commits
         run: |
