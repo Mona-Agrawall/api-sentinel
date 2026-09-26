@@ -28,6 +28,7 @@ jobs:
           done
 
           if [ "$COUNT" -gt 0 ]; then
+            git pull --rebase origin main
             git push
           else
             echo "No commits today"
