@@ -18,7 +18,7 @@ jobs:
 
       - name: Make random number of commits
         run: |
-          COUNT=$((RANDOM % 21))   # random number 0–20
+          COUNT=$((RANDOM % 11))   # random number 0–20
           echo "Making $COUNT commits today"
 
           for i in $(seq 1 $COUNT); do
