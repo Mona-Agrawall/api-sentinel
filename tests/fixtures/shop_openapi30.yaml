@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: Shop
+  version: "2.1"
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderIn"
+      responses:
+        "201": { description: created }
+  /orders/{order_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      summary: Get an order
+      parameters:
+        - name: expand
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200": { description: ok }
+    delete:
+      responses:
+        "204": { description: deleted }
+components:
+  parameters:
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+  schemas:
+    Base:
+      type: object
+      required: [customer]
+      properties:
+        customer: { type: string, minLength: 3, maxLength: 20 }
+    OrderIn:
+      allOf:
+        - $ref: "#/components/schemas/Base"
+        - type: object
+          required: [amount, currency]
+          properties:
+            amount: { type: number, minimum: 0, exclusiveMinimum: true, maximum: 500 }
+            currency: { type: string, enum: [EUR, USD] }
+            note: { type: string, nullable: true }
+            items:
+              type: array
+              items: { type: integer }
