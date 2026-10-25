@@ -1,0 +1,56 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  target_api:
+    build: .
+    command: ["uvicorn", "target_api.app:app", "--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      TARGET_API_FAULTS: ${TARGET_API_FAULTS:-0}
+    ports:
+      - "${TARGET_PORT:-9000}:9000"
+
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      TARGET_ALLOWLIST: localhost,127.0.0.1,target_api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  dashboard:
+    build: .
+    command:
+      [
+        "streamlit", "run", "app/dashboard/streamlit_app.py",
+        "--server.port", "8501", "--server.address", "0.0.0.0",
+        "--browser.gatherUsageStats", "false",
+      ]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
