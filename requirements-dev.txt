@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest==9.1.1
+ruff==0.17.2
+mypy==2.4.0
+types-PyYAML==6.0.12.20260906
