@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import logging
+import math
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Security,
+    status,
+)
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
@@ -16,6 +28,7 @@ from app.db.mongo_client import create_client
 from app.db.repo import RunRepository
 from app.generator.llm_client import LLMClient
 from app.pipeline import execute_run
+from app.rate_limit import TokenBucketLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +51,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("marked %d interrupted run(s) as failed", interrupted)
     app.state.settings = settings
     app.state.llm = LLMClient(settings)
+    app.state.run_limiter = TokenBucketLimiter(settings.run_rate_limit_per_minute)
     logger.info("LLM available: %s (model %s)", settings.llm_available, settings.groq_model)
+    if settings.api_key is None:
+        logger.warning(
+            "API_KEY is not set: POST /runs accepts unauthenticated requests. "
+            "Set API_KEY for anything other than local development."
+        )
     yield
 
 
@@ -65,6 +84,46 @@ def get_app_settings(request: Request) -> Settings:
 RepoDep = Annotated[RunRepository, Depends(get_repo)]
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def authenticate(
+    request: Request,
+    settings: SettingsDep,
+    api_key: Annotated[str | None, Security(api_key_header)],
+    bearer: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+) -> str:
+    """Dependency for mutating endpoints: check the API key, return the rate-limit key.
+
+    The key is accepted as ``X-API-Key: <key>`` or ``Authorization: Bearer <key>``. Without a
+    configured ``API_KEY`` every caller is let through and rate-limited by client address.
+    """
+    expected = settings.api_key
+    if expected is None:
+        return f"ip:{request.client.host if request.client else 'unknown'}"
+    candidates = [c for c in (api_key, bearer.credentials if bearer else None) if c]
+    secret = expected.get_secret_value().encode()
+    if not any(secrets.compare_digest(c.encode(), secret) for c in candidates):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "missing or invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return "api-key"
+
+
+def limit_run_starts(request: Request, caller: Annotated[str, Depends(authenticate)]) -> None:
+    """Dependency: allow at most ``RUN_RATE_LIMIT_PER_MINUTE`` run starts per caller."""
+    limiter: TokenBucketLimiter = request.app.state.run_limiter
+    retry_after = limiter.acquire(caller)
+    if retry_after is not None:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many runs started; retry later",
+            headers={"Retry-After": str(math.ceil(retry_after))},
+        )
+
 
 class RunCreated(BaseModel):
     """Response of ``POST /runs``."""
@@ -87,7 +146,12 @@ def health(repo: RepoDep) -> dict[str, Any]:
     return {"status": "ok" if db_ok else "degraded", "database": db_ok}
 
 
-@app.post("/runs", status_code=status.HTTP_202_ACCEPTED, response_model=RunCreated)
+@app.post(
+    "/runs",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RunCreated,
+    dependencies=[Depends(limit_run_starts)],
+)
 async def create_run(
     body: RunRequest,
     background: BackgroundTasks,

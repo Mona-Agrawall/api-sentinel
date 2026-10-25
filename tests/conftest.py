@@ -19,6 +19,7 @@ def settings() -> Settings:
     return Settings(
         _env_file=None,
         groq_api_key=None,
+        api_key=None,
         mongodb_uri="mongomock://test",
         target_allowlist="localhost,127.0.0.1,target.test",
         regression_baseline_runs=5,

@@ -179,7 +179,7 @@ and does not discard the functional results.
 ```bash
 git clone https://github.com/Mona-Agrawall/api-sentinel.git
 cd api-sentinel
-cp .env.example .env            # optionally set GROQ_API_KEY
+cp .env.example .env            # set API_KEY; optionally set GROQ_API_KEY
 docker compose up --build
 ```
 
@@ -221,9 +221,16 @@ streamlit run app/dashboard/streamlit_app.py  # dashboard
 Start a run. The API returns `202 Accepted` with the run id, and the run executes in the
 background.
 
+When `API_KEY` is set, `POST /runs` requires it, either as an `X-API-Key` header or as
+`Authorization: Bearer <key>`:
+
+- A missing or wrong key returns `401`.
+- A caller exceeding `RUN_RATE_LIMIT_PER_MINUTE` receives `429` with a `Retry-After` header.
+
 ```bash
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
   -d '{
         "spec_url": "http://127.0.0.1:9000/openapi.json",
         "base_url": "http://127.0.0.1:9000",
@@ -237,7 +244,7 @@ container reaches the target by its service name.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/runs` | Start a run with `{spec_url, base_url, users, duration_s}` |
+| `POST` | `/runs` | Start a run with `{spec_url, base_url, users, duration_s}`; requires the API key when one is configured |
 | `GET` | `/runs?limit=&base_url=` | List runs, newest first, optionally filtered by target |
 | `GET` | `/runs/{id}` | Run summary, load statistics, flags and every case result |
 | `GET` | `/health` | Liveness and database connectivity |
@@ -284,6 +291,8 @@ template.
 | `MONGODB_URI` | `mongodb://localhost:27017` | MongoDB URI; `mongomock://...` selects an in-memory store |
 | `MONGODB_DB` | `api_sentinel` | Database name |
 | `TARGET_ALLOWLIST` | `localhost,127.0.0.1,target_api` | Hosts permitted for `spec_url` and `base_url` |
+| `API_KEY` | empty | Key required on `POST /runs`. When empty, the endpoint is open and a warning is logged at startup. Never logged. |
+| `RUN_RATE_LIMIT_PER_MINUTE` | `10` | Maximum run starts per minute per caller: per API key, or per client address when no key is set |
 | `REQUEST_TIMEOUT_S` | `10` | Timeout per functional request |
 | `FUNCTIONAL_CONCURRENCY` | `10` | Maximum concurrent functional requests |
 | `MAX_CASES_PER_ENDPOINT` | `60` | Maximum rule-based cases per endpoint |
@@ -404,6 +413,7 @@ api-sentinel/
 ├── app/
 │   ├── main.py                 FastAPI service: /runs, /runs/{id}, /health
 │   ├── config.py               Environment-driven, validated settings
+│   ├── rate_limit.py           In-memory token-bucket rate limiter
 │   ├── pipeline.py             Orchestrates a run end to end
 │   ├── cli.py                  Command-line entry point
 │   ├── generator/
@@ -433,6 +443,11 @@ api-sentinel/
 
 ## Security
 
+- **Authenticated run starts.** When `API_KEY` is set, `POST /runs` requires the key, compares
+  it in constant time, and returns `401` if it is missing or wrong. Read-only endpoints stay
+  open.
+- **Rate-limited run starts.** Run starts are rate-limited per caller by an in-memory token
+  bucket, which returns `429` when exceeded.
 - **Restricted outbound traffic.** Test traffic is sent only to the run's `base_url`, whose host
   must appear in `TARGET_ALLOWLIST`. Every outgoing request passes through an origin guard, and
   redirects are not followed, so neither a malicious specification nor LLM output can send
@@ -457,8 +472,9 @@ api-sentinel/
 - Latency baselines are scoped to a `base_url` and load profile, and need at least one previous
   completed run with that profile. Measurements are only comparable on the same hardware.
 - Runs execute inside the API process. On startup the API marks any `pending` or `running`
-  run as `failed`, since a restart has interrupted it. This assumes a single API instance per
-  database; scaling out would require a job queue.
+  run as `failed`, since a restart has interrupted it. This recovery and the in-memory rate
+  limiter both assume a single API instance per database. Scaling out would require a job
+  queue and a shared rate-limit store.
 - On Windows, use `127.0.0.1` rather than `localhost` for local targets. `localhost` resolves to
   IPv6 first while Uvicorn listens on IPv4, which produced p99 outliers of around 2 s during
   development.

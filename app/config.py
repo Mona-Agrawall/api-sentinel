@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     )
     max_spec_bytes: int = Field(default=5_000_000, gt=0)
 
+    # API access
+    api_key: SecretStr | None = None
+    run_rate_limit_per_minute: int = Field(default=10, ge=1, le=10_000)
+
     # Runner
     request_timeout_s: float = Field(default=10.0, gt=0, le=120)
     functional_concurrency: int = Field(default=10, ge=1, le=100)
@@ -59,7 +63,7 @@ class Settings(BaseSettings):
             return [h.strip().lower() for h in value.split(",") if h.strip()]
         return value
 
-    @field_validator("groq_api_key", mode="before")
+    @field_validator("groq_api_key", "api_key", mode="before")
     @classmethod
     def _empty_key_is_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

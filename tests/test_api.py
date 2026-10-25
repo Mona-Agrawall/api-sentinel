@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 import app.main as main_module
 from app.config import Settings
@@ -148,3 +150,98 @@ def test_startup_fails_runs_interrupted_by_a_restart(
     for run_id, expected in ((completed, RunStatus.COMPLETED), (failed, RunStatus.FAILED)):
         run = repo.get_run(run_id)
         assert run is not None and run.status == expected and run.error is None
+
+
+API_KEY = "test-api-key-123"
+
+
+@pytest.fixture
+def secured_client(
+    repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    secured = settings.model_copy(update={"api_key": SecretStr(API_KEY)})
+    with _started_app(repo, secured, monkeypatch) as test_client:
+        yield test_client
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"X-API-Key": "wrong"},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": f"Basic {API_KEY}"},
+    ],
+    ids=["missing", "wrong-header", "wrong-bearer", "wrong-scheme"],
+)
+def test_create_run_rejects_missing_or_wrong_key(
+    secured_client: TestClient, repo: RunRepository, headers: dict[str, str]
+) -> None:
+    response = secured_client.post("/runs", json=VALID, headers=headers)
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert secured_client.calls == []
+    assert repo.list_runs() == []
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{"X-API-Key": API_KEY}, {"Authorization": f"Bearer {API_KEY}"}],
+    ids=["x-api-key", "bearer"],
+)
+def test_create_run_accepts_correct_key(
+    secured_client: TestClient, headers: dict[str, str]
+) -> None:
+    response = secured_client.post("/runs", json=VALID, headers=headers)
+    assert response.status_code == 202
+    assert [c[0] for c in secured_client.calls] == [response.json()["id"]]
+
+
+def test_auth_is_checked_before_body_validation(secured_client: TestClient) -> None:
+    assert secured_client.post("/runs", json={}).status_code == 401
+
+
+def test_read_endpoints_stay_open_with_a_key_configured(secured_client: TestClient) -> None:
+    assert secured_client.get("/health").status_code == 200
+    assert secured_client.get("/runs").status_code == 200
+
+
+def test_startup_warns_when_api_key_unset(
+    repo: RunRepository,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING), _started_app(repo, settings, monkeypatch):
+        pass
+    assert "API_KEY is not set" in caplog.text
+
+
+def test_api_key_never_logged(
+    repo: RunRepository,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secured = settings.model_copy(update={"api_key": SecretStr(API_KEY)})
+    with caplog.at_level(logging.DEBUG), _started_app(repo, secured, monkeypatch) as client:
+        client.post("/runs", json=VALID, headers={"X-API-Key": API_KEY})
+        client.post("/runs", json=VALID, headers={"X-API-Key": "wrong"})
+    assert "API_KEY is not set" not in caplog.text
+    assert API_KEY not in caplog.text
+
+
+def test_rapid_run_starts_are_rate_limited(
+    repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    limited = settings.model_copy(
+        update={"api_key": SecretStr(API_KEY), "run_rate_limit_per_minute": 2}
+    )
+    headers = {"X-API-Key": API_KEY}
+    with _started_app(repo, limited, monkeypatch) as client:
+        statuses = [client.post("/runs", json=VALID, headers=headers) for _ in range(3)]
+        assert [r.status_code for r in statuses] == [202, 202, 429]
+        assert int(statuses[-1].headers["Retry-After"]) > 0
+        assert len(client.calls) == 2
+        # Rejected (unauthenticated) requests do not use up the caller's budget.
+        assert client.post("/runs", json=VALID).status_code == 401

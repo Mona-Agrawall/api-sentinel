@@ -282,8 +282,10 @@ run on a CI runner will differ.
 
 ## 9. Pipeline and API (`app/pipeline.py`, `app/main.py`, `app/cli.py`)
 
-**What it does.** `POST /runs` validates the body. That covers URLs, the allow-list, and
-the user and duration caps. It stores a `pending` run and returns `202`, then
+**What it does.** `POST /runs` first checks the API key, when `API_KEY` is set, and the
+per-caller token-bucket rate limit. These are dependencies, so they reject a request with `401`
+or `429` before the body is even validated. It then validates the body. That covers URLs, the
+allow-list, and the user and duration caps. It stores a `pending` run and returns `202`, then
 `execute_run` runs as a background task. The pipeline saves the run after each stage, so
 `GET /runs/{id}` shows progress. The CLI runs the same pipeline synchronously.
 
