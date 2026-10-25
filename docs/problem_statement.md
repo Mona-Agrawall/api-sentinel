@@ -1,22 +1,72 @@
-# Problem statement
+# Problem Statement
 
-Backend APIs regress in two quiet ways.
+## Background
 
-1. **Edge-case correctness.** Handlers mishandle nulls, missing optional fields,
-   boundary numbers, wrong types and over-long strings. These cases are tedious to
-   write by hand, so they are rarely covered. The result is a 500 in production where
-   a 4xx was expected.
-2. **Latency.** A change makes one endpoint slower. Without run-over-run comparison
-   nobody notices until users do.
+Most modern applications depend on backend APIs. Whenever an API changes, through a new
+feature, a bug fix or a refactor, there is a risk that something which used to work no longer
+does. Teams usually rely on automated tests to catch these problems. In practice, two kinds of
+problem are often missed.
 
-**Goal.** Given only an OpenAPI 3.x spec and a base URL, automatically:
+## The problem
 
-- generate edge-case requests (deterministic rules, plus an LLM for creative cases),
-- check that invalid input is rejected with 4xx and that nothing returns 5xx,
-- measure per-endpoint latency under load (p50/p95/p99),
-- store every run and flag new failures and statistically meaningful slowdowns
-  against recent history,
-- show it all on a dashboard.
+### 1. Edge cases are rarely tested
 
-**Non-goals.** Security or penetration testing, GraphQL, authenticated flows, and
-contract testing of response bodies.
+Developers test the normal cases: valid input that should succeed. Unusual input is tested far
+less often:
+
+- a field sent as `null`,
+- an optional field left out,
+- a number just outside its allowed range,
+- a value of the wrong type,
+- a string that is empty or far too long.
+
+Writing these tests by hand for every endpoint is slow and repetitive, so they are often
+skipped. As a result, an API may crash with a `500 Internal Server Error` on input it should
+have rejected cleanly with a `4xx` error. Users find these bugs in production.
+
+### 2. Performance regressions go unnoticed
+
+A code change can make an endpoint slower without breaking it. The response is still correct,
+so functional tests pass. Unless latency is measured on every change and compared with earlier
+measurements, the slowdown goes unnoticed until users complain.
+
+## Objective
+
+Build a tool that, given only an API's OpenAPI specification and its base URL, automatically:
+
+1. **Generates edge-case tests** for every endpoint, using deterministic rules and,
+   optionally, a large language model for additional cases.
+2. **Runs those tests** and checks that invalid input is rejected with a `4xx` response and
+   that no request causes a `5xx` server error.
+3. **Load-tests the API** and measures response times (p50, p95 and p99) for each endpoint.
+4. **Stores the results of every run** so that runs can be compared over time.
+5. **Flags regressions**, meaning new server errors, newly failing tests, and significant
+   slowdowns compared with recent runs under the same load.
+6. **Presents the results** through a REST API, a command-line tool suitable for CI
+   pipelines, and a dashboard.
+
+## Success criteria
+
+The tool is considered successful if, on a demo API with deliberately injected faults, it:
+
+- detects an endpoint that has become slower and flags it as a latency regression,
+- detects a request that now causes a server error and flags it,
+- raises no false alarms on endpoints that have not changed,
+- continues to work when the language model is unavailable, falling back to rule-based tests
+  and recording that it did so.
+
+## Scope
+
+**In scope**
+
+- REST APIs described by an OpenAPI 3.0 or 3.1 specification
+- JSON request bodies, path parameters and query parameters
+- Status-code checks, load testing and run-over-run comparison
+- Safe operation: test traffic is sent only to approved hosts
+
+**Out of scope**
+
+- Security or penetration testing
+- GraphQL, gRPC and Swagger 2.0 APIs
+- Endpoints that require user authentication
+- Validation of response body contents (contract testing)
