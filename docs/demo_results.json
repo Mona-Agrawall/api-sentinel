@@ -1,0 +1,195 @@
+{
+  "generated_at": "2026-10-25T20:46:28+00:00",
+  "machine": "Windows 11, Python 3.12.10",
+  "storage": "mongodb",
+  "llm": "fallback (rule-based only)",
+  "users": 10,
+  "duration_s": 15,
+  "baseline_runs": 3,
+  "slow_endpoint": "GET /items/{item_id}",
+  "baseline_p95_ms_per_run": [
+    3.0,
+    2.0,
+    3.0
+  ],
+  "baseline_p95_ms_median": 3.0,
+  "faulty_p95_ms": 220.0,
+  "baseline_failed_cases": [
+    0,
+    0,
+    0
+  ],
+  "faulty_total_cases": 60,
+  "faulty_failed_cases": [
+    {
+      "endpoint": "POST /items",
+      "case": "body: only required fields",
+      "status": 500,
+      "body": "{\"name\": \"test\", \"price\": 1.0, \"quantity\": 1, \"category\": \"books\"}"
+    },
+    {
+      "endpoint": "POST /items",
+      "case": "description: null",
+      "status": 500,
+      "body": "{\"name\": \"test\", \"price\": 1.0, \"quantity\": 1, \"category\": \"books\", \"description\": null}"
+    }
+  ],
+  "flags": [
+    {
+      "kind": "latency_regression",
+      "endpoint": "GET /items/{item_id}",
+      "message": "p95 220 ms vs baseline 3 ms (+217 ms, +7233%)",
+      "details": {
+        "current_p95_ms": 220.0,
+        "baseline_p95_ms": 3.0,
+        "delta_ms": 217.0,
+        "delta_pct": 7233.33,
+        "baseline_runs": 3,
+        "pct_threshold": 20.0,
+        "ms_threshold": 50.0
+      }
+    },
+    {
+      "kind": "new_5xx",
+      "endpoint": "POST /items",
+      "message": "'body: only required fields' returned 500",
+      "details": {
+        "case": "body: only required fields",
+        "payload_hash": "e64aa898b128b363",
+        "status_code": 500,
+        "previous_status_code": 201,
+        "request": {
+          "path_params": {},
+          "query": {},
+          "include_body": true,
+          "body_json": "{\"name\": \"test\", \"price\": 1.0, \"quantity\": 1, \"category\": \"books\"}"
+        }
+      }
+    },
+    {
+      "kind": "new_5xx",
+      "endpoint": "POST /items",
+      "message": "'description: null' returned 500",
+      "details": {
+        "case": "description: null",
+        "payload_hash": "b4672734132eea12",
+        "status_code": 500,
+        "previous_status_code": 201,
+        "request": {
+          "path_params": {},
+          "query": {},
+          "include_body": true,
+          "body_json": "{\"name\": \"test\", \"price\": 1.0, \"quantity\": 1, \"category\": \"books\", \"description\": null}"
+        }
+      }
+    }
+  ],
+  "load_faulty": [
+    {
+      "endpoint": "GET /search",
+      "requests": 216,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 14.74,
+      "p50_ms": 3.0,
+      "p95_ms": 5.0,
+      "p99_ms": 11.0,
+      "avg_ms": 2.96,
+      "max_ms": 19.71
+    },
+    {
+      "endpoint": "GET /items",
+      "requests": 202,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 13.78,
+      "p50_ms": 3.0,
+      "p95_ms": 5.0,
+      "p99_ms": 12.0,
+      "avg_ms": 2.98,
+      "max_ms": 19.28
+    },
+    {
+      "endpoint": "GET /health",
+      "requests": 226,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 15.42,
+      "p50_ms": 2.0,
+      "p95_ms": 4.0,
+      "p99_ms": 14.0,
+      "avg_ms": 2.82,
+      "max_ms": 18.21
+    },
+    {
+      "endpoint": "GET /items/{item_id}",
+      "requests": 248,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 16.92,
+      "p50_ms": 200.0,
+      "p95_ms": 220.0,
+      "p99_ms": 220.0,
+      "avg_ms": 196.03,
+      "max_ms": 276.43
+    }
+  ],
+  "load_last_baseline": [
+    {
+      "endpoint": "GET /health",
+      "requests": 327,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 22.69,
+      "p50_ms": 2.0,
+      "p95_ms": 4.0,
+      "p99_ms": 15.0,
+      "avg_ms": 2.79,
+      "max_ms": 17.2
+    },
+    {
+      "endpoint": "GET /search",
+      "requests": 339,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 23.52,
+      "p50_ms": 3.0,
+      "p95_ms": 5.0,
+      "p99_ms": 13.0,
+      "avg_ms": 2.8,
+      "max_ms": 17.17
+    },
+    {
+      "endpoint": "GET /items",
+      "requests": 319,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 22.14,
+      "p50_ms": 3.0,
+      "p95_ms": 5.0,
+      "p99_ms": 15.0,
+      "avg_ms": 2.95,
+      "max_ms": 17.45
+    },
+    {
+      "endpoint": "GET /items/{item_id}",
+      "requests": 351,
+      "failures": 0,
+      "error_rate": 0.0,
+      "rps": 24.36,
+      "p50_ms": 2.0,
+      "p95_ms": 3.0,
+      "p99_ms": 5.0,
+      "avg_ms": 1.81,
+      "max_ms": 14.11
+    }
+  ],
+  "run_ids": {
+    "baseline": [
+      "7c49bb713e8e4c138db225c79372c73f",
+      "ce67a9012d6f474da4b8961689889935",
+      "e1d58733fa584122b64feee0b2bba0ff"
+    ],
+    "faulty": "587108ccaa5240ac9b13680603ee330a"
+  }
+}
