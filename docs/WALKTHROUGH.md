@@ -217,8 +217,9 @@ load-tested unless `LOAD_INCLUDE_UNSAFE_METHODS=true`.
 
 **What it does.** Two collections. `runs` holds one document per run: status, generation
 info, summary counts, per-endpoint load stats and flags. `results` holds one document per
-case. Indexes cover `results(endpoint, timestamp)`, `results(run_id)`, `runs(created_at)`
-and `runs(base_url, status, created_at)`, the last of which serves the history query.
+case. Indexes cover `results(endpoint, timestamp)`, `results(run_id)`, `runs(created_at)`,
+`runs(base_url, status, created_at)` for the previous-run lookup, and
+`runs(base_url, status, users, duration_s, created_at)` for the latency-baseline query.
 
 **Key design choice.** All database access goes through `RunRepository`, and
 `create_client` returns either a real `MongoClient` or a mongomock client for
@@ -230,13 +231,14 @@ endpoint. Endpoint keys are user-controlled strings: a path like `/v1.2/items` c
 `.`, and keys can start with `$`. Both are awkward or illegal as MongoDB field names.
 
 **Quiz**
-1. Which index serves "the last K completed runs against this base_url, newest first"?
+1. Which index serves "the last K completed runs against this base_url with this load profile, newest first"?
 2. Why store a run's results in a separate collection instead of embedding them in the run?
 3. What's the catch with `mongomock://` when running the API and the dashboard as separate processes?
 
 <details><summary>Answers</summary>
 
-1. `runs(base_url, status, created_at desc)`: equality on the first two fields, sorted on the third.
+1. `runs(base_url, status, users, duration_s, created_at desc)`: equality on the first four
+   fields, sorted on the last.
 2. MongoDB documents are capped at 16 MB, and a run can have thousands of cases with
    10 kB bodies. Separate documents also allow per-endpoint queries across runs.
 3. Each process gets its own in-memory database, so the dashboard sees nothing. Use
@@ -259,7 +261,9 @@ is +60 ms). In the demo, 3 ms → 220 ms is +217 ms and +7233%, so it's flagged.
 
 **What could go wrong.** Comparing runs that aren't comparable. If one run used 10
 users and the next 200, p95 rises for reasons that have nothing to do with code changes.
-History is scoped by `base_url`, but users and duration are your responsibility.
+That is why latency history is scoped by `base_url` *and* load profile (`users`,
+`duration_s`). Hardware is still your responsibility: a baseline recorded on a laptop and a
+run on a CI runner will differ.
 
 **Quiz**
 1. Baseline p95s are 10, 30 and 1000 ms. What's the baseline, and would a mean have been better?

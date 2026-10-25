@@ -48,9 +48,9 @@ def _fake_load(p95_by_endpoint: dict[str, float]):  # type: ignore[no-untyped-de
     return runner
 
 
-def _run(repo: RunRepository, settings: Settings, p95: dict[str, float]) -> RunDoc:
+def _run(repo: RunRepository, settings: Settings, p95: dict[str, float], users: int = 2) -> RunDoc:
     run = repo.create_run(
-        RunDoc(spec_url=f"{BASE}/openapi.json", base_url=BASE, users=2, duration_s=1)
+        RunDoc(spec_url=f"{BASE}/openapi.json", base_url=BASE, users=users, duration_s=1)
     )
     transport = httpx.ASGITransport(app=target_app, raise_app_exceptions=False)
     return asyncio.run(
@@ -100,6 +100,27 @@ def test_pipeline_finds_null_bug_and_latency_regression(
         "latency_regression": ["GET /items/{item_id}"],
         "new_5xx": ["POST /items", "POST /items"],
     }
+
+
+def test_latency_baseline_only_uses_runs_with_the_same_load_profile(
+    repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("TARGET_API_FAULTS", raising=False)
+    slow = "GET /items/{item_id}"
+    for _ in range(2):
+        assert _run(repo, settings, {slow: 6}, users=10).flags == []
+        time.sleep(0.01)  # distinct created_at
+
+    heavy = _run(repo, settings, {slow: 210}, users=200)
+    assert heavy.status == RunStatus.COMPLETED, heavy.error
+    assert heavy.flags == []  # 200-user latency is not compared with 10-user baselines
+
+    time.sleep(0.01)
+    light = _run(repo, settings, {slow: 210}, users=10)
+    assert [(f.kind, f.endpoint) for f in light.flags] == [("latency_regression", slow)]
+    # Baseline is the two 10-user runs only; the 200-user run is excluded.
+    assert light.flags[0].details["baseline_p95_ms"] == 6
+    assert light.flags[0].details["baseline_runs"] == 2
 
 
 def test_pipeline_records_failure_for_bad_spec(repo: RunRepository, settings: Settings) -> None:

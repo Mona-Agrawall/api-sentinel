@@ -120,8 +120,11 @@ async def execute_run(
             run.load_error = str(exc)
             logger.warning("run %s: load test failed: %s", run.id, exc)
 
+        # Latency is only comparable under the same load profile; functional outcomes are
+        # independent of load, so they are compared with the previous run of any profile.
         history = repo.previous_completed_runs(run, settings.regression_baseline_runs)
-        previous_results = repo.get_results(history[0].id) if history else None
+        previous = repo.previous_completed_runs(run, 1, same_load_profile=False)
+        previous_results = repo.get_results(previous[0].id) if previous else None
         run.flags = [
             *detect_latency_regressions(
                 run.load,

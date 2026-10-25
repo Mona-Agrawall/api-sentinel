@@ -24,6 +24,15 @@ class RunRepository:
         self.runs.create_index(
             [("base_url", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]
         )
+        self.runs.create_index(
+            [
+                ("base_url", ASCENDING),
+                ("status", ASCENDING),
+                ("users", ASCENDING),
+                ("duration_s", ASCENDING),
+                ("created_at", DESCENDING),
+            ]
+        )
         self.results.create_index([("endpoint", ASCENDING), ("timestamp", DESCENDING)])
         self.results.create_index([("run_id", ASCENDING)])
 
@@ -56,20 +65,23 @@ class RunRepository:
         cursor = self.runs.find(query).sort("created_at", DESCENDING).limit(limit)
         return [_from_mongo(d) for d in cursor]
 
-    def previous_completed_runs(self, run: RunDoc, limit: int) -> list[RunDoc]:
-        """Completed runs against the same target created before ``run`` (newest first)."""
-        cursor = (
-            self.runs.find(
-                {
-                    "base_url": run.base_url,
-                    "status": RunStatus.COMPLETED.value,
-                    "created_at": {"$lt": run.created_at},
-                    "_id": {"$ne": run.id},
-                }
-            )
-            .sort("created_at", DESCENDING)
-            .limit(limit)
-        )
+    def previous_completed_runs(
+        self, run: RunDoc, limit: int, *, same_load_profile: bool = True
+    ) -> list[RunDoc]:
+        """Completed runs against the same target created before ``run`` (newest first).
+
+        With ``same_load_profile`` (the default) only runs with the same ``users`` and
+        ``duration_s`` count, so latency is never compared across different load levels.
+        """
+        query: dict[str, Any] = {
+            "base_url": run.base_url,
+            "status": RunStatus.COMPLETED.value,
+            "created_at": {"$lt": run.created_at},
+            "_id": {"$ne": run.id},
+        }
+        if same_load_profile:
+            query |= {"users": run.users, "duration_s": run.duration_s}
+        cursor = self.runs.find(query).sort("created_at", DESCENDING).limit(limit)
         return [_from_mongo(d) for d in cursor]
 
     # --- results ------------------------------------------------------------------

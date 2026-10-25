@@ -299,8 +299,9 @@ template.
 
 ### Latency
 
-Latency is evaluated per endpoint. Only completed runs against the same `base_url` count as
-history.
+Latency is evaluated per endpoint. Only completed runs against the same `base_url` with the
+same load profile (`users` and `duration_s`) count as history, so a heavier run is never
+compared with baselines measured under lighter load.
 
 ```
 baseline_p95 = median(p95 of the endpoint over the last K completed runs)
@@ -316,7 +317,8 @@ flagged if and only if  delta_pct > X  and  delta_ms > Y
 
 ### Functional
 
-Each case is compared, by payload hash, against the most recent previous run.
+Each case is compared, by payload hash, against the most recent previous run of the same
+target, whatever its load profile.
 
 - `new_5xx`: the case returns a `5xx` now and did not in the previous run. On a target's first
   run, every `5xx` is new.
@@ -452,9 +454,8 @@ api-sentinel/
 - Authentication is not handled, so protected endpoints respond with `401` or `403`.
 - By default, load tests replay each endpoint's valid baseline request against `GET` and `HEAD`
   endpoints only. Locust rounds percentiles above 100 ms to two significant digits.
-- Latency baselines are scoped to a `base_url` and need at least one previous completed run.
-  Measurements are comparable only when runs use the same user count and duration on the same
-  hardware.
+- Latency baselines are scoped to a `base_url` and load profile, and need at least one previous
+  completed run with that profile. Measurements are only comparable on the same hardware.
 - On Windows, use `127.0.0.1` rather than `localhost` for local targets. `localhost` resolves to
   IPv6 first while Uvicorn listens on IPv4, which produced p99 outliers of around 2 s during
   development.
