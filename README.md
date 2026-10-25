@@ -456,6 +456,9 @@ api-sentinel/
   endpoints only. Locust rounds percentiles above 100 ms to two significant digits.
 - Latency baselines are scoped to a `base_url` and load profile, and need at least one previous
   completed run with that profile. Measurements are only comparable on the same hardware.
+- Runs execute inside the API process. On startup the API marks any `pending` or `running`
+  run as `failed`, since a restart has interrupted it. This assumes a single API instance per
+  database; scaling out would require a job queue.
 - On Windows, use `127.0.0.1` rather than `localhost` for local targets. `localhost` resolves to
   IPv6 first while Uvicorn listens on IPv4, which produced p99 outliers of around 2 s during
   development.

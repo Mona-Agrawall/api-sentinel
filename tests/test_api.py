@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -13,10 +14,11 @@ from app.db.models import RunDoc, RunStatus
 from app.db.repo import RunRepository
 
 
-@pytest.fixture
-def client(
+@contextmanager
+def _started_app(
     repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[TestClient]:
+    """Run the app's lifespan with ``repo`` and ``settings`` and a recording execute_run."""
     calls: list[tuple[Any, ...]] = []
 
     async def fake_execute_run(run_id: str, *args: Any, **kwargs: Any) -> None:
@@ -25,10 +27,20 @@ def client(
     monkeypatch.setattr(main_module, "execute_run", fake_execute_run)
     monkeypatch.setattr(main_module, "get_settings", lambda: settings)
     main_module.app.state.repo = repo
-    with TestClient(main_module.app) as test_client:
-        test_client.calls = calls
+    try:
+        with TestClient(main_module.app) as test_client:
+            test_client.calls = calls
+            yield test_client
+    finally:
+        del main_module.app.state.repo
+
+
+@pytest.fixture
+def client(
+    repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    with _started_app(repo, settings, monkeypatch) as test_client:
         yield test_client
-    del main_module.app.state.repo
 
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -111,3 +123,28 @@ def test_list_and_get_runs(client: TestClient, repo: RunRepository) -> None:
     detail = client.get(f"/runs/{new.id}").json()
     assert detail["run"]["status"] == "completed" and detail["results"] == []
     assert client.get("/runs/does-not-exist").status_code == 404
+
+
+def test_startup_fails_runs_interrupted_by_a_restart(
+    repo: RunRepository, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def seed(status: RunStatus) -> str:
+        return repo.create_run(
+            RunDoc(spec_url="s", base_url="http://a", users=1, duration_s=1, status=status)
+        ).id
+
+    running, pending = seed(RunStatus.RUNNING), seed(RunStatus.PENDING)
+    completed, failed = seed(RunStatus.COMPLETED), seed(RunStatus.FAILED)
+
+    with _started_app(repo, settings, monkeypatch):
+        pass
+
+    for run_id in (running, pending):
+        run = repo.get_run(run_id)
+        assert run is not None
+        assert run.status == RunStatus.FAILED
+        assert run.error == "interrupted: process restarted before run completed"
+        assert run.finished_at is not None
+    for run_id, expected in ((completed, RunStatus.COMPLETED), (failed, RunStatus.FAILED)):
+        run = repo.get_run(run_id)
+        assert run is not None and run.status == expected and run.error is None

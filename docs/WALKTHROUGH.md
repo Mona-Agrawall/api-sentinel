@@ -292,9 +292,12 @@ with an error message, and `finished_at` is always set. Blocking work (LLM HTTP 
 the Locust subprocess) goes through `asyncio.to_thread`, so the API keeps responding
 during a run.
 
-**What could go wrong.** FastAPI background tasks run in the API process. If the process
-restarts mid-run, that run stays `running` forever. A production version would use a job
-queue (RQ, Celery, Arq) and a reaper for stale runs.
+**What could go wrong.** FastAPI background tasks run in the API process, so a restart
+loses any run in flight. On startup the API therefore marks every `pending` or `running`
+run as `failed` ("interrupted: process restarted before run completed"). That recovery
+assumes a single API instance: with several replicas sharing one database, a restarting
+replica would also fail runs that another replica is still executing. A multi-instance
+deployment would use a job queue (RQ, Celery, Arq) with worker heartbeats instead.
 
 **Quiz**
 1. Why return `202 Accepted` rather than `201 Created` or `200`?

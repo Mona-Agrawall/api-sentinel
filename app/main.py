@@ -19,6 +19,8 @@ from app.pipeline import execute_run
 
 logger = logging.getLogger(__name__)
 
+INTERRUPTED_MESSAGE = "interrupted: process restarted before run completed"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -31,6 +33,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         client = create_client(settings.mongodb_uri)
         app.state.repo = RunRepository(client[settings.mongodb_db])
     app.state.repo.ensure_indexes()
+    interrupted = app.state.repo.fail_interrupted_runs(INTERRUPTED_MESSAGE)
+    if interrupted:
+        logger.warning("marked %d interrupted run(s) as failed", interrupted)
     app.state.settings = settings
     app.state.llm = LLMClient(settings)
     logger.info("LLM available: %s (model %s)", settings.llm_available, settings.groq_model)

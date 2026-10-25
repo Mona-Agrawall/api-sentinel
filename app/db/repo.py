@@ -7,7 +7,7 @@ from typing import Any
 from pymongo import ASCENDING, DESCENDING
 from pymongo.database import Database
 
-from app.db.models import CaseResult, ResultDoc, RunDoc, RunStatus
+from app.db.models import CaseResult, ResultDoc, RunDoc, RunStatus, utcnow
 
 
 class RunRepository:
@@ -53,6 +53,18 @@ class RunRepository:
     def save_run(self, run: RunDoc) -> None:
         """Replace a run document with the given state."""
         self.runs.replace_one({"_id": run.id}, _to_mongo(run), upsert=True)
+
+    def fail_interrupted_runs(self, message: str) -> int:
+        """Mark every pending or running run as failed; returns how many were updated.
+
+        Runs execute inside the API process, so at startup any such run belongs to a
+        process that no longer exists and would otherwise never finish.
+        """
+        result = self.runs.update_many(
+            {"status": {"$in": [RunStatus.PENDING.value, RunStatus.RUNNING.value]}},
+            {"$set": {"status": RunStatus.FAILED.value, "error": message, "finished_at": utcnow()}},
+        )
+        return result.modified_count
 
     def get_run(self, run_id: str) -> RunDoc | None:
         """Fetch one run by id."""
